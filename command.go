@@ -79,6 +79,9 @@ type Command struct {
 	// Hidden defines, if this command is hidden and should NOT show up in the list of available commands.
 	Hidden bool
 
+	// ChainedPersistentPreRun
+	ChainedPersistentPreRun bool
+
 	// Annotations are key/value pairs that can be used by applications to identify or
 	// group commands.
 	Annotations map[string]string
@@ -816,15 +819,32 @@ func (c *Command) execute(a []string) (err error) {
 		return err
 	}
 
-	for p := c; p != nil; p = p.Parent() {
-		if p.PersistentPreRunE != nil {
-			if err := p.PersistentPreRunE(c, argWoFlags); err != nil {
-				return err
+	if c.ChainedPersistentPreRun {
+		var chain []*Command
+		for p := c; p != nil && p.ChainedPersistentPreRun; p = p.Parent() {
+			chain = append([]*Command{p}, chain...)
+		}
+
+		for _, fromChain := range chain {
+			if fromChain.PersistentPreRunE != nil {
+				if err = fromChain.PersistentPreRunE(c, argWoFlags); err != nil {
+					return err
+				}
+			} else if fromChain.PersistentPreRun != nil {
+				fromChain.PersistentPreRun(c, argWoFlags)
 			}
-			break
-		} else if p.PersistentPreRun != nil {
-			p.PersistentPreRun(c, argWoFlags)
-			break
+		}
+	} else {
+		for p := c; p != nil; p = p.Parent() {
+			if p.PersistentPreRunE != nil {
+				if err := p.PersistentPreRunE(c, argWoFlags); err != nil {
+					return err
+				}
+				break
+			} else if p.PersistentPreRun != nil {
+				p.PersistentPreRun(c, argWoFlags)
+				break
+			}
 		}
 	}
 	if c.PreRunE != nil {
