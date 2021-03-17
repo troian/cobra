@@ -75,6 +75,7 @@ func TestCmdNameCompletionInGo(t *testing.T) {
 
 	expected := strings.Join([]string{
 		"aliased",
+		"completion",
 		"firstChild",
 		"help",
 		"secondChild",
@@ -123,6 +124,7 @@ func TestCmdNameCompletionInGo(t *testing.T) {
 
 	expected = strings.Join([]string{
 		"aliased\tA command with aliases",
+		"completion\tgenerate the autocompletion script for the specified shell",
 		"firstChild\tFirst command",
 		"help\tHelp about any command",
 		"secondChild",
@@ -139,6 +141,8 @@ func TestNoCmdNameCompletionInGo(t *testing.T) {
 		Use: "root",
 		Run: emptyRun,
 	}
+	rootCmd.Flags().String("localroot", "", "local root flag")
+
 	childCmd1 := &Command{
 		Use:   "childCmd1",
 		Short: "First command",
@@ -178,6 +182,65 @@ func TestNoCmdNameCompletionInGo(t *testing.T) {
 	}
 	// Reset the flag for the next command
 	nonPersistentFlag.Changed = false
+
+	expected = strings.Join([]string{
+		":0",
+		"Completion ended with directive: ShellCompDirectiveDefault", ""}, "\n")
+
+	if output != expected {
+		t.Errorf("expected: %q, got: %q", expected, output)
+	}
+
+	// Test that sub-command names are completed if a local non-persistent flag is present and TraverseChildren is set to true
+	// set TraverseChildren to true on the root cmd
+	rootCmd.TraverseChildren = true
+
+	output, err = executeCommand(rootCmd, ShellCompNoDescRequestCmd, "--localroot", "value", "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	// Reset TraverseChildren for next command
+	rootCmd.TraverseChildren = false
+
+	expected = strings.Join([]string{
+		"childCmd1",
+		"completion",
+		"help",
+		":4",
+		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
+
+	if output != expected {
+		t.Errorf("expected: %q, got: %q", expected, output)
+	}
+
+	// Test that sub-command names from a child cmd are completed if a local non-persistent flag is present
+	// and TraverseChildren is set to true on the root cmd
+	rootCmd.TraverseChildren = true
+
+	output, err = executeCommand(rootCmd, ShellCompNoDescRequestCmd, "--localroot", "value", "childCmd1", "--nonPersistent", "value", "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	// Reset TraverseChildren for next command
+	rootCmd.TraverseChildren = false
+	// Reset the flag for the next command
+	nonPersistentFlag.Changed = false
+
+	expected = strings.Join([]string{
+		"childCmd2",
+		":4",
+		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
+
+	if output != expected {
+		t.Errorf("expected: %q, got: %q", expected, output)
+	}
+
+	// Test that we don't use Traverse when we shouldn't.
+	// This command should not return a completion since the command line is invalid without TraverseChildren.
+	output, err = executeCommand(rootCmd, ShellCompNoDescRequestCmd, "--localroot", "value", "childCmd1", "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
 
 	expected = strings.Join([]string{
 		":0",
@@ -313,6 +376,7 @@ func TestValidArgsAndCmdCompletionInGo(t *testing.T) {
 	}
 
 	expected := strings.Join([]string{
+		"completion",
 		"help",
 		"thechild",
 		"one",
@@ -363,6 +427,7 @@ func TestValidArgsFuncAndCmdCompletionInGo(t *testing.T) {
 	}
 
 	expected := strings.Join([]string{
+		"completion",
 		"help",
 		"thechild",
 		"one",
@@ -430,6 +495,7 @@ func TestFlagNameCompletionInGo(t *testing.T) {
 
 	expected := strings.Join([]string{
 		"childCmd",
+		"completion",
 		"help",
 		":4",
 		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
@@ -501,7 +567,7 @@ func TestFlagNameCompletionInGoWithDesc(t *testing.T) {
 	}
 	rootCmd.AddCommand(childCmd)
 
-	rootCmd.Flags().IntP("first", "f", -1, "first flag")
+	rootCmd.Flags().IntP("first", "f", -1, "first flag\nlonger description for flag")
 	rootCmd.PersistentFlags().BoolP("second", "s", false, "second flag")
 	childCmd.Flags().String("subFlag", "", "sub flag")
 
@@ -513,6 +579,7 @@ func TestFlagNameCompletionInGoWithDesc(t *testing.T) {
 
 	expected := strings.Join([]string{
 		"childCmd\tfirst command",
+		"completion\tgenerate the autocompletion script for the specified shell",
 		"help\tHelp about any command",
 		":4",
 		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
@@ -720,17 +787,17 @@ func TestRequiredFlagNameCompletionInGo(t *testing.T) {
 	rootCmd.AddCommand(childCmd)
 
 	rootCmd.Flags().IntP("requiredFlag", "r", -1, "required flag")
-	rootCmd.MarkFlagRequired("requiredFlag")
+	assertNoErr(t, rootCmd.MarkFlagRequired("requiredFlag"))
 	requiredFlag := rootCmd.Flags().Lookup("requiredFlag")
 
 	rootCmd.PersistentFlags().IntP("requiredPersistent", "p", -1, "required persistent")
-	rootCmd.MarkPersistentFlagRequired("requiredPersistent")
+	assertNoErr(t, rootCmd.MarkPersistentFlagRequired("requiredPersistent"))
 	requiredPersistent := rootCmd.PersistentFlags().Lookup("requiredPersistent")
 
 	rootCmd.Flags().StringP("release", "R", "", "Release name")
 
 	childCmd.Flags().BoolP("subRequired", "s", false, "sub required flag")
-	childCmd.MarkFlagRequired("subRequired")
+	assertNoErr(t, childCmd.MarkFlagRequired("subRequired"))
 	childCmd.Flags().BoolP("subNotRequired", "n", false, "sub not required flag")
 
 	// Test that a required flag is suggested even without the - prefix
@@ -741,6 +808,7 @@ func TestRequiredFlagNameCompletionInGo(t *testing.T) {
 
 	expected := strings.Join([]string{
 		"childCmd",
+		"completion",
 		"help",
 		"--requiredFlag",
 		"-r",
@@ -866,6 +934,7 @@ func TestRequiredFlagNameCompletionInGo(t *testing.T) {
 
 	expected = strings.Join([]string{
 		"childCmd",
+		"completion",
 		"help",
 		"--requiredFlag",
 		"-r",
@@ -904,19 +973,19 @@ func TestFlagFileExtFilterCompletionInGo(t *testing.T) {
 
 	// No extensions.  Should be ignored.
 	rootCmd.Flags().StringP("file", "f", "", "file flag")
-	rootCmd.MarkFlagFilename("file")
+	assertNoErr(t, rootCmd.MarkFlagFilename("file"))
 
 	// Single extension
 	rootCmd.Flags().StringP("log", "l", "", "log flag")
-	rootCmd.MarkFlagFilename("log", "log")
+	assertNoErr(t, rootCmd.MarkFlagFilename("log", "log"))
 
 	// Multiple extensions
 	rootCmd.Flags().StringP("yaml", "y", "", "yaml flag")
-	rootCmd.MarkFlagFilename("yaml", "yaml", "yml")
+	assertNoErr(t, rootCmd.MarkFlagFilename("yaml", "yaml", "yml"))
 
 	// Directly using annotation
 	rootCmd.Flags().StringP("text", "t", "", "text flag")
-	rootCmd.Flags().SetAnnotation("text", BashCompFilenameExt, []string{"txt"})
+	assertNoErr(t, rootCmd.Flags().SetAnnotation("text", BashCompFilenameExt, []string{"txt"}))
 
 	// Test that the completion logic returns the proper info for the completion
 	// script to handle the file filtering
@@ -1026,15 +1095,15 @@ func TestFlagDirFilterCompletionInGo(t *testing.T) {
 
 	// Filter directories
 	rootCmd.Flags().StringP("dir", "d", "", "dir flag")
-	rootCmd.MarkFlagDirname("dir")
+	assertNoErr(t, rootCmd.MarkFlagDirname("dir"))
 
 	// Filter directories within a directory
 	rootCmd.Flags().StringP("subdir", "s", "", "subdir")
-	rootCmd.Flags().SetAnnotation("subdir", BashCompSubdirsInDir, []string{"themes"})
+	assertNoErr(t, rootCmd.Flags().SetAnnotation("subdir", BashCompSubdirsInDir, []string{"themes"}))
 
 	// Multiple directory specification get ignored
 	rootCmd.Flags().StringP("manydir", "m", "", "manydir")
-	rootCmd.Flags().SetAnnotation("manydir", BashCompSubdirsInDir, []string{"themes", "colors"})
+	assertNoErr(t, rootCmd.Flags().SetAnnotation("manydir", BashCompSubdirsInDir, []string{"themes", "colors"}))
 
 	// Test that the completion logic returns the proper info for the completion
 	// script to handle the directory filtering
@@ -1370,7 +1439,7 @@ func TestValidArgsFuncInBashScript(t *testing.T) {
 	rootCmd.AddCommand(child)
 
 	buf := new(bytes.Buffer)
-	rootCmd.GenBashCompletion(buf)
+	assertNoErr(t, rootCmd.GenBashCompletion(buf))
 	output := buf.String()
 
 	check(t, output, "has_completion_function=1")
@@ -1385,7 +1454,7 @@ func TestNoValidArgsFuncInBashScript(t *testing.T) {
 	rootCmd.AddCommand(child)
 
 	buf := new(bytes.Buffer)
-	rootCmd.GenBashCompletion(buf)
+	assertNoErr(t, rootCmd.GenBashCompletion(buf))
 	output := buf.String()
 
 	checkOmit(t, output, "has_completion_function=1")
@@ -1401,7 +1470,7 @@ func TestCompleteCmdInBashScript(t *testing.T) {
 	rootCmd.AddCommand(child)
 
 	buf := new(bytes.Buffer)
-	rootCmd.GenBashCompletion(buf)
+	assertNoErr(t, rootCmd.GenBashCompletion(buf))
 	output := buf.String()
 
 	check(t, output, ShellCompNoDescRequestCmd)
@@ -1417,7 +1486,7 @@ func TestCompleteNoDesCmdInZshScript(t *testing.T) {
 	rootCmd.AddCommand(child)
 
 	buf := new(bytes.Buffer)
-	rootCmd.GenZshCompletionNoDesc(buf)
+	assertNoErr(t, rootCmd.GenZshCompletionNoDesc(buf))
 	output := buf.String()
 
 	check(t, output, ShellCompNoDescRequestCmd)
@@ -1433,7 +1502,7 @@ func TestCompleteCmdInZshScript(t *testing.T) {
 	rootCmd.AddCommand(child)
 
 	buf := new(bytes.Buffer)
-	rootCmd.GenZshCompletion(buf)
+	assertNoErr(t, rootCmd.GenZshCompletion(buf))
 	output := buf.String()
 
 	check(t, output, ShellCompRequestCmd)
@@ -1446,7 +1515,7 @@ func TestFlagCompletionInGo(t *testing.T) {
 		Run: emptyRun,
 	}
 	rootCmd.Flags().IntP("introot", "i", -1, "help message for flag introot")
-	rootCmd.RegisterFlagCompletionFunc("introot", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
+	assertNoErr(t, rootCmd.RegisterFlagCompletionFunc("introot", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
 		completions := []string{}
 		for _, comp := range []string{"1\tThe first", "2\tThe second", "10\tThe tenth"} {
 			if strings.HasPrefix(comp, toComplete) {
@@ -1454,9 +1523,9 @@ func TestFlagCompletionInGo(t *testing.T) {
 			}
 		}
 		return completions, ShellCompDirectiveDefault
-	})
+	}))
 	rootCmd.Flags().String("filename", "", "Enter a filename")
-	rootCmd.RegisterFlagCompletionFunc("filename", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
+	assertNoErr(t, rootCmd.RegisterFlagCompletionFunc("filename", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
 		completions := []string{}
 		for _, comp := range []string{"file.yaml\tYAML format", "myfile.json\tJSON format", "file.xml\tXML format"} {
 			if strings.HasPrefix(comp, toComplete) {
@@ -1464,7 +1533,7 @@ func TestFlagCompletionInGo(t *testing.T) {
 			}
 		}
 		return completions, ShellCompDirectiveNoSpace | ShellCompDirectiveNoFileComp
-	})
+	}))
 
 	// Test completing an empty string
 	output, err := executeCommand(rootCmd, ShellCompNoDescRequestCmd, "--introot", "")
@@ -1643,7 +1712,7 @@ func TestFlagCompletionInGoWithDesc(t *testing.T) {
 		Run: emptyRun,
 	}
 	rootCmd.Flags().IntP("introot", "i", -1, "help message for flag introot")
-	rootCmd.RegisterFlagCompletionFunc("introot", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
+	assertNoErr(t, rootCmd.RegisterFlagCompletionFunc("introot", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
 		completions := []string{}
 		for _, comp := range []string{"1\tThe first", "2\tThe second", "10\tThe tenth"} {
 			if strings.HasPrefix(comp, toComplete) {
@@ -1651,9 +1720,9 @@ func TestFlagCompletionInGoWithDesc(t *testing.T) {
 			}
 		}
 		return completions, ShellCompDirectiveDefault
-	})
+	}))
 	rootCmd.Flags().String("filename", "", "Enter a filename")
-	rootCmd.RegisterFlagCompletionFunc("filename", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
+	assertNoErr(t, rootCmd.RegisterFlagCompletionFunc("filename", func(cmd *Command, args []string, toComplete string) ([]string, ShellCompDirective) {
 		completions := []string{}
 		for _, comp := range []string{"file.yaml\tYAML format", "myfile.json\tJSON format", "file.xml\tXML format"} {
 			if strings.HasPrefix(comp, toComplete) {
@@ -1661,7 +1730,7 @@ func TestFlagCompletionInGoWithDesc(t *testing.T) {
 			}
 		}
 		return completions, ShellCompDirectiveNoSpace | ShellCompDirectiveNoFileComp
-	})
+	}))
 
 	// Test completing an empty string
 	output, err := executeCommand(rootCmd, ShellCompRequestCmd, "--introot", "")
@@ -1858,6 +1927,7 @@ func TestCompleteHelp(t *testing.T) {
 	expected := strings.Join([]string{
 		"child1",
 		"child2",
+		"completion",
 		"help",
 		":4",
 		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
@@ -1875,6 +1945,7 @@ func TestCompleteHelp(t *testing.T) {
 	expected = strings.Join([]string{
 		"child1",
 		"child2",
+		"completion",
 		"help", // "<program> help help" is a valid command, so should be completed
 		":4",
 		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
@@ -1896,5 +1967,194 @@ func TestCompleteHelp(t *testing.T) {
 
 	if output != expected {
 		t.Errorf("expected: %q, got: %q", expected, output)
+	}
+}
+
+func removeCompCmd(rootCmd *Command) {
+	// Remove completion command for the next test
+	for _, cmd := range rootCmd.commands {
+		if cmd.Name() == compCmdName {
+			rootCmd.RemoveCommand(cmd)
+			return
+		}
+	}
+}
+
+func TestDefaultCompletionCmd(t *testing.T) {
+	rootCmd := &Command{
+		Use:  "root",
+		Args: NoArgs,
+		Run:  emptyRun,
+	}
+
+	// Test that no completion command is created if there are not other sub-commands
+	assertNoErr(t, rootCmd.Execute())
+	for _, cmd := range rootCmd.commands {
+		if cmd.Name() == compCmdName {
+			t.Errorf("Should not have a 'completion' command when there are no other sub-commands of root")
+			break
+		}
+	}
+
+	subCmd := &Command{
+		Use: "sub",
+		Run: emptyRun,
+	}
+	rootCmd.AddCommand(subCmd)
+
+	// Test that a completion command is created if there are other sub-commands
+	found := false
+	assertNoErr(t, rootCmd.Execute())
+	for _, cmd := range rootCmd.commands {
+		if cmd.Name() == compCmdName {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("Should have a 'completion' command when there are other sub-commands of root")
+	}
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+
+	// Test that the default completion command can be disabled
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	assertNoErr(t, rootCmd.Execute())
+	for _, cmd := range rootCmd.commands {
+		if cmd.Name() == compCmdName {
+			t.Errorf("Should not have a 'completion' command when the feature is disabled")
+			break
+		}
+	}
+	// Re-enable for next test
+	rootCmd.CompletionOptions.DisableDefaultCmd = false
+
+	// Test that completion descriptions are enabled by default
+	output, err := executeCommand(rootCmd, compCmdName, "zsh")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	check(t, output, ShellCompRequestCmd)
+	checkOmit(t, output, ShellCompNoDescRequestCmd)
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+
+	// Test that completion descriptions can be disabled completely
+	rootCmd.CompletionOptions.DisableDescriptions = true
+	output, err = executeCommand(rootCmd, compCmdName, "zsh")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	check(t, output, ShellCompNoDescRequestCmd)
+	// Re-enable for next test
+	rootCmd.CompletionOptions.DisableDescriptions = false
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+
+	var compCmd *Command
+	// Test that the --no-descriptions flag is present for the relevant shells only
+	assertNoErr(t, rootCmd.Execute())
+	for _, shell := range []string{"fish", "powershell", "zsh"} {
+		if compCmd, _, err = rootCmd.Find([]string{compCmdName, shell}); err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if flag := compCmd.Flags().Lookup(compCmdNoDescFlagName); flag == nil {
+			t.Errorf("Missing --%s flag for %s shell", compCmdNoDescFlagName, shell)
+		}
+	}
+	for _, shell := range []string{"bash"} {
+		if compCmd, _, err = rootCmd.Find([]string{compCmdName, shell}); err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if flag := compCmd.Flags().Lookup(compCmdNoDescFlagName); flag != nil {
+			t.Errorf("Unexpected --%s flag for %s shell", compCmdNoDescFlagName, shell)
+		}
+	}
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+
+	// Test that the '--no-descriptions' flag can be disabled
+	rootCmd.CompletionOptions.DisableNoDescFlag = true
+	assertNoErr(t, rootCmd.Execute())
+	for _, shell := range []string{"fish", "zsh", "bash", "powershell"} {
+		if compCmd, _, err = rootCmd.Find([]string{compCmdName, shell}); err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if flag := compCmd.Flags().Lookup(compCmdNoDescFlagName); flag != nil {
+			t.Errorf("Unexpected --%s flag for %s shell", compCmdNoDescFlagName, shell)
+		}
+	}
+	// Re-enable for next test
+	rootCmd.CompletionOptions.DisableNoDescFlag = false
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+
+	// Test that the '--no-descriptions' flag is disabled when descriptions are disabled
+	rootCmd.CompletionOptions.DisableDescriptions = true
+	assertNoErr(t, rootCmd.Execute())
+	for _, shell := range []string{"fish", "zsh", "bash", "powershell"} {
+		if compCmd, _, err = rootCmd.Find([]string{compCmdName, shell}); err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+		if flag := compCmd.Flags().Lookup(compCmdNoDescFlagName); flag != nil {
+			t.Errorf("Unexpected --%s flag for %s shell", compCmdNoDescFlagName, shell)
+		}
+	}
+	// Re-enable for next test
+	rootCmd.CompletionOptions.DisableDescriptions = false
+	// Remove completion command for the next test
+	removeCompCmd(rootCmd)
+}
+
+func TestCompleteCompletion(t *testing.T) {
+	rootCmd := &Command{Use: "root", Args: NoArgs, Run: emptyRun}
+	subCmd := &Command{
+		Use: "sub",
+		Run: emptyRun,
+	}
+	rootCmd.AddCommand(subCmd)
+
+	// Test sub-commands of the completion command
+	output, err := executeCommand(rootCmd, ShellCompNoDescRequestCmd, "completion", "")
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+
+	expected := strings.Join([]string{
+		"bash",
+		"fish",
+		"powershell",
+		"zsh",
+		":4",
+		"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
+
+	if output != expected {
+		t.Errorf("expected: %q, got: %q", expected, output)
+	}
+
+	// Test there are no completions for the sub-commands of the completion command
+	var compCmd *Command
+	for _, cmd := range rootCmd.Commands() {
+		if cmd.Name() == compCmdName {
+			compCmd = cmd
+			break
+		}
+	}
+
+	for _, shell := range compCmd.Commands() {
+		output, err = executeCommand(rootCmd, ShellCompNoDescRequestCmd, compCmdName, shell.Name(), "")
+		if err != nil {
+			t.Errorf("Unexpected error: %v", err)
+		}
+
+		expected = strings.Join([]string{
+			":4",
+			"Completion ended with directive: ShellCompDirectiveNoFileComp", ""}, "\n")
+
+		if output != expected {
+			t.Errorf("expected: %q, got: %q", expected, output)
+		}
 	}
 }
